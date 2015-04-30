@@ -1,0 +1,136 @@
+<?php
+
+/**
+ * Implements hook_schema().
+ */
+
+function biblioteca_schema(){
+
+$schema['biblioteca'] = array(
+  'description' => 'Table for biblioteca module',
+  'fields' => array(
+    'id' => array(
+      'description' => 'An autoincrement id',
+      'type' => 'serial',
+      'size' => 'small',
+      'not null' => TRUE,
+    ),
+    'title' => array(
+      'description' => 'Book Title',
+      'type' => 'varchar',
+      'length' => '100',
+      'not null' => TRUE,
+    ),
+    'author' => array(
+      'description' => 'Book Author',
+      'type' => 'varchar',
+      'length' => '100',
+      'not null' => TRUE,
+    ),
+    'isbn' => array(
+      'description' => 'Book ISBN number',
+      'type' => 'varchar',
+      'length' => '15',
+      'not null' => TRUE,
+    ),
+    'status' => array(
+      'description' => 'Book Status',
+      'type' => 'varchar',
+      'length' => '12',
+      'not null' => TRUE,
+    ),
+     'datum' => array(
+      'description' => 'Date when the book was reserved',
+      'mysql_type' => 'date',
+      'not null' => FALSE,
+    ),
+     'userID' => array(
+      'description' => 'ID of user who reserved the book',
+      'type' => 'int',
+      'size' => 'small',
+      'not null' => FALSE,
+    ),
+  ),
+  'primary key' => array('id'),
+);
+
+  return $schema;
+}
+/**
+ * Implements hook_install().
+ */
+function biblioteca_install() {
+  // create any roles we will be using.
+
+  $bibliotecar_permissions = array(
+    'administer biblioteca module',
+  );
+  
+  _add_role('Bibliotecar');
+  
+  _add_permissions('Bibliotecar', $bibliotecar_permissions);
+
+  _create_user('Bibliotecar');
+
+}
+/**
+ * Implements hook_uninstall().
+ */
+function biblioteca_uninstall() {
+  // remove any roles we created.
+  user_role_delete('Bibliotecar');
+  //remove user
+  _delete_user('bibliotecar');
+}
+
+/**
+ *  Adds a new role.
+ *      @machine_name - the name of the role to be added.
+ *      @weight - the optional display weight for role.
+ */
+function _add_role($machine_name, $weight = 0)  {
+  $role = new stdClass();
+  $role->name = $machine_name;
+  $role->weight = $weight;
+  user_role_save($role);
+}
+/**
+ *  Adds permissions to a role.
+ *  @role_name - the name of the role to receive an update.
+ *  @permissions - the array of permissions to add.
+ */
+function _add_permissions($role_name, $permissions)  {
+  $role = user_role_load_by_name($role_name);
+  user_role_grant_permissions($role->rid, $permissions);
+}
+
+/**
+ * Create new user.
+ */
+function _create_user($role_name){
+
+  $role = user_role_load_by_name($role_name);
+
+  $new_user_roles = array(
+  DRUPAL_AUTHENTICATED_RID => 'authenticated user',
+  $role->rid => TRUE,
+  );
+
+  $new_user = new stdClass();
+  $new_user->name = 'bibliotecar';
+  $new_user->pass = 'pass'; // plain text, hashed later.
+  $new_user->mail = 'bib@g.com';
+  $new_user->roles = $new_user_roles;
+  $new_user->status = 1; // omit this line to block this user at creation.
+  $new_user->is_new = TRUE; // not necessary because we already omit $new_user->uid.
+  user_save($new_user);
+}
+
+/**
+ * Delete user on uninstall.
+ */
+
+function _delete_user($user_name){
+  $user = user_load_by_name($user_name);
+  user_delete($user->uid);
+}
