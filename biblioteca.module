@@ -7,6 +7,14 @@
 function biblioteca_menu() {
     $items = array();
     
+    //page for displaying biblioteca database table content.
+    $items['biblioteca'] = array( 
+        'title' => 'My Books',
+        'page callback' => 'mytable_display', 
+        'access callback' => TRUE,
+        'type' => MENU_NORMAL_ITEM,
+    );
+
     //page with form for adding books.
     $items['biblioteca/add'] = array(
         'title' => t('Add Book'),
@@ -23,12 +31,11 @@ function biblioteca_menu() {
         'access arguments' => array('access content'), //function for permissions.
     );
 
-    //page for displaying biblioteca database table content.
-    $items['biblioteca'] = array( 
-        'title' => 'My Books',
-        'page callback' => 'mytable_display', 
-        'access callback' => TRUE,
-        'type' => MENU_NORMAL_ITEM,
+    $items['biblioteca/mail/%'] = array(
+        'title' => t('Send notification page'),
+        'page callback' => 'drupal_get_form', 
+        'page arguments' => array('biblioteca_mail_form', 2),
+        'access arguments' => array('access content'), //function for permissions.
     );
 
     return $items;
@@ -123,12 +130,12 @@ function biblioteca_edit_form($form, &$form_state, $variable) {
     if (in_array('Bibliotecar', $user->roles) || in_array('administrator', $user->roles)) {
 
       $form['id'] = array(
-      '#type' => 'hidden',
-      '#title' => t('ID'),
-      '#default_value' => $variable,
-      '#description' => 'Enter ID of the book you want to edit. ID can be seen on My Books Table page',
-      '#required' => TRUE, 
-      );
+        '#type' => 'hidden',
+        '#title' => t('ID'),
+        '#default_value' => $variable,
+        '#description' => 'Enter ID of the book you want to edit. ID can be seen on My Books Table page',
+        '#required' => TRUE, 
+        );
 
       //getting the current status of the book
       $result = db_select('biblioteca','s')
@@ -341,8 +348,9 @@ function mytable_display() {
       $rows = array();
             foreach ($result as $row) {
                 $editlink = "<a href='".drupal_get_path_alias(current_path()) . '/edit/'. $row->id."'>Edit</a>";
-                $notif = "<a href='#'>Send Mail</a>";
-                $rows[] = array('data' => array($row->id, $row->title, $row->author, $row->isbn, $row->status, $editlink, $row->date, $row->userID, $notif));
+                $maillink = "<a href='".drupal_get_path_alias(current_path()) . '/mail/'. $row->id."'>Mail</a>";
+                
+                $rows[] = array('data' => array($row->id, $row->title, $row->author, $row->isbn, $row->status, $editlink, $row->date, $row->userID, $maillink));
 
             }
       // If rows are not empty theme and display the rows.
@@ -398,7 +406,7 @@ function mytable_display() {
       $rows = array();
             foreach ($result as $row) {
                 $editlink = "<a href='".drupal_get_path_alias(current_path()) . '/edit/'. $row->id."'>Edit</a>";
-
+                
                 $rows[] = array('data' => array($row->id, $row->title, $row->author, $row->isbn, $row->status, $editlink));
 
             }
@@ -410,4 +418,84 @@ function mytable_display() {
 
         return $output;
     }
+}
+
+/**
+ * Implements hook_form().
+ * Form for sending mail.
+ */
+
+
+
+function biblioteca_mail_form($form, &$form_state, $variable) {
+
+  $form['id'] = array(
+    '#type' => 'hidden',
+    '#title' => t('ID'),
+    '#default_value' => $variable,
+    '#required' => TRUE, 
+  );
+
+  //getting the current status of the book
+  $result = db_select('biblioteca','s')
+    ->condition('id', $variable, '=')
+    ->fields('s', array('status','title','author', 'userID', 'date'))
+    ->execute();
+
+    foreach($result as $item) {
+      $current_title = $item->title;
+      $current_author = $item->author;
+      $current_uid = $item->userID;
+    }
+    
+    $usr = user_load($current_uid);
+
+
+  $form['mailto'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Mail to'),
+    '#default_value' => $usr->mail,
+    '#required' => TRUE, 
+  );
+
+  $form['subject'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Subject'),
+    '#default_value' => 'Reminder to return book!',
+    '#required' => TRUE, 
+  );
+
+  $form['body'] = array(
+    '#type' => 'textarea',
+    '#title' => t('Body'),
+    '#default_value' => 'This is a reminder to return the following book: '.$current_title.' from '.$current_author,
+    '#required' => TRUE, 
+  );
+
+  $form['submit'] = array(
+    '#type' => 'submit',
+    '#value' => 'Send',
+    '#submit' =>  array('biblioteca_mail_form_submit'),
+  );
+  return $form;
+}
+
+/**
+ * Implements mybooks_edit_form_submit().
+ */
+
+function biblioteca_mail_form_submit($form, $form_state) {
+
+  $mailto = $form_state['values']['mailto'];
+  $subject = $form_state['values']['subject'];
+  $body = $form_state['values']['body'];
+  $body = wordwrap($body,70);
+ 
+  if(mail($mailto, $subject, $body)){
+    drupal_set_message('Email sent to '.$mailto);
+  }else{
+    drupal_set_message('Error in sending email', $type = 'error');
+  };
+
+//  mail($mailto, $subject, $body);
 }
