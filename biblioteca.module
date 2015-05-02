@@ -1,24 +1,413 @@
 <?php
 
+/**
+ * Implements hook_menu().
+ */
+
 function biblioteca_menu() {
     $items = array();
-
-    $items['hello'] = array(
-        'title' => 'Hello World Test',
-        'page callback' => 'say_hello_world',
-        'access arguments' => array('access content'),
+    
+    //page with form for adding books.
+    $items['biblioteca/add'] = array(
+        'title' => t('Add Book'),
+        'page callback' => 'drupal_get_form', 
+        'page arguments' => array('biblioteca_add_form'),
+        'access arguments' => array('administer biblioteca module'), //function for permissions.
         'type' => MENU_NORMAL_ITEM,
-     );
+    );
+    //page withform for editing book status.
+    $items['biblioteca/edit/%'] = array(
+        'title' => t('Edit Book'),
+        'page callback' => 'drupal_get_form', 
+        'page arguments' => array('biblioteca_edit_form', 2),
+        'access arguments' => array('access content'), //function for permissions.
+    );
+
+    //page for displaying biblioteca database table content.
+    $items['biblioteca'] = array( 
+        'title' => 'My Books',
+        'page callback' => 'mytable_display', 
+        'access callback' => TRUE,
+        'type' => MENU_NORMAL_ITEM,
+    );
 
     return $items;
 }
 
-function say_hello_world() {
-        $vars = array();
-        $vars['type']="ul";
-        $vars['title'] = "";
-        $vars['attributes']=array("");
-        $vars['items'][0]="This is a simple proof of concept module";
 
-        return theme_item_list($vars);
+/**
+ * Implements hook_form().
+ */
+
+function biblioteca_add_form($form, &$form_state) {
+
+  $form['title'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Book Title'),
+    '#required' => TRUE, 
+  );
+  $form['author'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Author'),
+    '#required' => TRUE,
+  );
+  $form['isbn'] = array(
+    '#type' => 'textfield',
+    '#title' => t('ISBN number'),
+    '#description' => 'ISBN should be a 10 or 13 digit number. Please do not enter non-digit characters.',
+    '#required' => TRUE, 
+  );
+  $form['status'] = array(
+    '#type' => 'select',
+    '#title' => t('Book Status'),
+    '#required' => TRUE, 
+    "#default_value" => "plugin1",
+    "#options" => array(
+        "Available" => t("Available"),
+        "Request" => t("Request"),
+        "Reserved" => t("Reserved"),
+        "Unavailable" => t("Unavailable"),   
+        ),
+  );
+
+  $form['submit'] = array(
+    '#type' => 'submit',
+    '#value' => 'Submit',
+    '#validate' =>  array('biblioteca_form_validate'),
+    '#submit' =>  array('biblioteca_form_submit'),
+  );
+  return $form;
+}
+
+/**
+ * Implements biblioteca_form_validate().
+ * Checks if ISBN number contains 10 or 13 only digit characters.
+ */
+function biblioteca_form_validate($form, $form_state) { 
+    if ((strlen($form_state['values']['isbn']) != 10) 
+            && (strlen($form_state['values']['isbn']) != 13)
+            || (!ctype_digit($form_state['values']['isbn']))){
+                form_set_error('isbn', 'Please enter valid ISBN-10 or ISBN-13 number.');
+    } 
+
+
+}
+
+/**
+ * Implements biblioteca_form_submit().
+ */
+
+function biblioteca_form_submit($form, $form_state) {
+
+  db_insert('biblioteca')
+    ->fields(array(
+      'title' => $form_state['values']['title'], 
+      'author' => $form_state['values']['author'],  
+      'isbn' => $form_state['values']['isbn'],  
+      'status' => $form_state['values']['status'],      
+    ))
+    ->execute();
+    drupal_set_message("Book added successfully to database! yuhuuuu!");
+}
+
+
+/**
+ * Implements hook_form().
+ */
+
+function biblioteca_edit_form($form, &$form_state, $variable) {
+
+  global $user;
+
+
+    if (in_array('Bibliotecar', $user->roles) || in_array('administrator', $user->roles)) {
+
+      $form['id'] = array(
+      '#type' => 'hidden',
+      '#title' => t('ID'),
+      '#default_value' => $variable,
+      '#description' => 'Enter ID of the book you want to edit. ID can be seen on My Books Table page',
+      '#required' => TRUE, 
+      );
+
+      //getting the current status of the book
+      $result = db_select('biblioteca','s')
+        ->condition('id', $variable, '=')
+        ->fields('s', array('status'))
+        ->execute();
+
+        foreach($result as $item) {
+          $current_status = $item->status;
+        }
+
+
+      $form['status'] = array(
+        '#type' => 'select',
+        '#title' => t('Book Status'),
+        '#required' => TRUE, 
+        "#default_value" => $current_status,
+        "#options" => array(
+            "Available" => t("Available"),
+            "Request" => t("Request"),
+            "Reserved" => t("Reserved"),
+            "Unavailable" => t("Unavailable"),   
+            ),
+      );
+
+      $form['submit'] = array(
+        '#type' => 'submit',
+        '#value' => 'Submit',
+        '#submit' =>  array('biblioteca_edit_form_submit'),
+      );
+
+      return $form;
+
+  }
+  else{
+
+      $form['id'] = array(
+      '#type' => 'hidden',
+      '#title' => t('ID'),
+      '#default_value' => $variable,
+      '#description' => 'Enter ID of the book you want to edit. ID can be seen on My Books Table page',
+      '#required' => TRUE, 
+      );
+
+      //getting the current status,title and author of the book
+      $result = db_select('biblioteca','s')
+        ->condition('id', $variable, '=')
+        ->fields('s', array('title','author','status'))
+        ->execute();
+
+        foreach($result as $item) {
+          $current_status = $item->status;
+          $current_title = $item->title;
+          $current_author = $item->author;
+        }
+
+
+        if ($current_status != "Available"){ 
+            drupal_set_message("This book is currently unavailible for request!", $type = "error");
+
+        }else{
+
+            $form['status'] = array(
+              '#type' => 'hidden',
+              '#title' => t('Book Status'),
+              '#required' => TRUE, 
+              "#default_value" => "Request",
+              "#options" => array(
+                  "Request" => t("Request"),  
+                  ),
+                );
+        
+            drupal_set_message("Dou you want to request ".$current_title." from ". $current_author."?", $type = "warning");
+
+            $form['submit'] = array(
+              '#type' => 'submit',
+              '#value' => 'Request Book',
+              '#submit' =>  array('biblioteca_edit_form_submit'),
+            );
+
+            return $form;
+        };
+      
+  };
+  
+}
+
+/**
+ * Implements biblioteca_edit_form_submit().
+ */
+
+function biblioteca_edit_form_submit($form, $form_state) {
+
+  global $user;
+
+  if (in_array('Bibliotecar', $user->roles) || in_array('administrator', $user->roles)) {
+
+      if ($form_state['values']['status'] == "Reserved"){
+
+          db_update('biblioteca')
+          ->fields(array(
+            'status' => $form_state['values']['status'],
+            'date' => date('Y-m-d'),
+              )
+          )
+          ->condition('id', $form_state['values']['id'])
+          ->execute();
+          drupal_set_message("Book status was updated successfully! yuhuuuu!");
+
+      }else{
+          db_update('biblioteca')
+          ->fields(array(
+            'status' => $form_state['values']['status'],
+            'date' => NULL,
+            'userID' => NULL,
+              )
+          )
+          ->condition('id', $form_state['values']['id'])
+          ->execute();
+          drupal_set_message("Book status was updated successfully! yuhuuuu!");
+      };
+      
+
+  }else{
+      db_update('biblioteca')
+      ->fields(array(
+        'status' => $form_state['values']['status'],
+        'userID' => $user->uid, 
+          )
+      )
+      ->condition('id', $form_state['values']['id'])
+      ->execute();
+      drupal_set_message("Book status was updated successfully! yuhuuuu!");
+  };
+
+}
+
+
+/**
+ * Implements hook_permission().
+ */
+
+function biblioteca_permission() {
+  return array(
+    'administer biblioteca module' => array(
+      'title' => t('Administer biblioteca module'),
+      'description' => t('Perform administration tasks for biblioteca module.'),
+    ),
+  );
+}
+
+
+/**
+ * Function to display biblioteca database table in table format with pager.
+ */
+
+function mytable_display() {
+
+  global $user;
+   if (in_array('Bibliotecar', $user->roles) || in_array('administrator', $user->roles)) {
+    $header = array(
+                array(
+                    'data' => t('ID'),
+                    'field' => 't.id',
+                ),
+                array(
+                    'data' => t('Title'),
+                    'field' => 't.title',
+                ),
+                array(
+                    'data' => t('Author'),
+                    'field' => 't.author',
+                ),
+                array(
+                    'data' => t('ISBN number'),
+                    'field' => 't.isbn',
+                ),
+                array(
+                    'data' => t('Status'),
+                    'field' => 't.status',
+                ),
+                array(
+                    'data' => t('Edit'),
+                ),
+                array(
+                    'data' => t('Date'),
+                    'field' => 't.date',
+                ),
+                array(
+                    'data' => t('UserID'),
+                    'field' => 't.userID',
+                ),
+                array(
+                    'data' => t('Mail'),
+                ),
+            );
+
+      $query = db_select('biblioteca', 't');
+
+      $query->fields('t', array('id','title','author','isbn','status','date','userID'));  // select your required fields here.
+
+      $table_sort = $query->extend('TableSort') // Add table sort extender.
+                          ->orderByHeader($header); // Add order by headers.
+
+      $pager = $table_sort->extend('PagerDefault')
+                          ->limit(20);  // here you can limit the number of data per page.
+
+      $result = $pager->execute();
+
+      $rows = array();
+            foreach ($result as $row) {
+                $editlink = "<a href='".drupal_get_path_alias(current_path()) . '/edit/'. $row->id."'>Edit</a>";
+                $notif = "<a href='#'>Send Mail</a>";
+                $rows[] = array('data' => array($row->id, $row->title, $row->author, $row->isbn, $row->status, $editlink, $row->date, $row->userID, $notif));
+
+            }
+      // If rows are not empty theme and display the rows.
+
+       $output = theme('pager');
+            $output .= theme('table', array('header' => $header, 'rows' => $rows, "empty" => t("No Records Found"), 'attributes' => array('id' => 'sort-table', 'class' => array('tbl-data'))));
+            $output .= theme('pager');
+
+        return $output;
+  
+
+
+  }else{
+    $header = array(
+                array(
+                    'data' => t('ID'),
+                    'field' => 't.id',
+                ),
+                array(
+                    'data' => t('Title'),
+                    'field' => 't.title',
+                ),
+                array(
+                    'data' => t('Author'),
+                    'field' => 't.author',
+                ),
+                array(
+                    'data' => t('ISBN number'),
+                    'field' => 't.isbn',
+                ),
+                array(
+                    'data' => t('Status'),
+                    'field' => 't.status',
+                ),
+                array(
+                    'data' => t('Edit'),
+
+                ),
+            );
+
+      $query = db_select('biblioteca', 't');
+
+      $query->fields('t', array('id','title','author','isbn','status'));  // select your required fields here.
+
+      $table_sort = $query->extend('TableSort') // Add table sort extender.
+                          ->orderByHeader($header); // Add order by headers.
+
+      $pager = $table_sort->extend('PagerDefault')
+                          ->limit(20);  // here you can limit the number of data per page.
+
+      $result = $pager->execute();
+
+      $rows = array();
+            foreach ($result as $row) {
+                $editlink = "<a href='".drupal_get_path_alias(current_path()) . '/edit/'. $row->id."'>Edit</a>";
+
+                $rows[] = array('data' => array($row->id, $row->title, $row->author, $row->isbn, $row->status, $editlink));
+
+            }
+      // If rows are not empty theme and display the rows.
+
+       $output = theme('pager');
+            $output .= theme('table', array('header' => $header, 'rows' => $rows, "empty" => t("No Records Found"), 'attributes' => array('id' => 'sort-table', 'class' => array('tbl-data'))));
+            $output .= theme('pager');
+
+        return $output;
+    }
 }
