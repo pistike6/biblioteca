@@ -9,7 +9,7 @@ function biblioteca_menu() {
     
     //page for displaying biblioteca database table content.
     $items['biblioteca'] = array( 
-        'title' => 'My Books',
+        'title' => 'Biblioteca',
         'page callback' => 'mytable_display', 
         'access callback' => TRUE,
         'type' => MENU_NORMAL_ITEM,
@@ -28,15 +28,32 @@ function biblioteca_menu() {
         'title' => t('Edit Book'),
         'page callback' => 'drupal_get_form', 
         'page arguments' => array('biblioteca_edit_form', 2),
-        'access arguments' => array('access content'), //function for permissions.
+        'access callback' => 'user_is_logged_in',
     );
 
     $items['biblioteca/mail/%'] = array(
         'title' => t('Send notification page'),
         'page callback' => 'drupal_get_form', 
-        'page arguments' => array('biblioteca_mail_form', 2),
-        'access arguments' => array('access content'), //function for permissions.
+        'page arguments' => array('biblioteca_mail_form',2),
+        'access arguments' => array('administer biblioteca module'), //function for permissions.
     );
+
+    $items['biblioteca/qr/%'] = array(
+        'title' => t('Send notification page'), 
+        'page callback' => 'qr_code_preprocess',
+        'page arguments' => array('qr_code_preprocess', 2),
+        'access arguments' => array('administer biblioteca module'), //function for permissions.
+    );
+
+  /*  $items['qr'] = array( 
+        'title' => 'QR Code',
+        'page callback' => 'qr_code_preprocess', 
+        'access callback' => TRUE,
+        'type' => MENU_NORMAL_ITEM,
+    );
+
+  */
+
 
     return $items;
 }
@@ -232,9 +249,9 @@ function biblioteca_edit_form_submit($form, $form_state) {
   global $user;
 
   if (in_array('Bibliotecar', $user->roles) || in_array('administrator', $user->roles)) {
-
+      //if current user is admin or bibliotecar
       if ($form_state['values']['status'] == "Reserved"){
-
+          //if status changes into Reserved the current date is inserted
           db_update('biblioteca')
           ->fields(array(
             'status' => $form_state['values']['status'],
@@ -246,6 +263,7 @@ function biblioteca_edit_form_submit($form, $form_state) {
           drupal_set_message("Book status was updated successfully! yuhuuuu!");
 
       }else{
+          //if status is changed into != Reserved delete date and userid field from database
           db_update('biblioteca')
           ->fields(array(
             'status' => $form_state['values']['status'],
@@ -260,6 +278,8 @@ function biblioteca_edit_form_submit($form, $form_state) {
       
 
   }else{
+      //if current user is not bibliotecar or admin
+      //and changes status into Request the user id is saved in the database
       db_update('biblioteca')
       ->fields(array(
         'status' => $form_state['values']['status'],
@@ -294,9 +314,7 @@ function biblioteca_permission() {
 
 function mytable_display() {
 
-  global $user;
-   if (in_array('Bibliotecar', $user->roles) || in_array('administrator', $user->roles)) {
-    $header = array(
+  $header = array(
                 array(
                     'data' => t('ID'),
                     'field' => 't.id',
@@ -319,7 +337,15 @@ function mytable_display() {
                 ),
                 array(
                     'data' => t('Edit'),
+
                 ),
+            );
+
+
+  global $user;
+   if (in_array('Bibliotecar', $user->roles) || in_array('administrator', $user->roles)) {
+      
+       $header2 = array(
                 array(
                     'data' => t('Date'),
                     'field' => 't.date',
@@ -331,7 +357,12 @@ function mytable_display() {
                 array(
                     'data' => t('Mail'),
                 ),
+                array(
+                    'data' => t('QR Code'),
+                ),
             );
+      //mearging the headers to get the extended table for bibliotecar.
+      $header = array_merge($header, $header2);
 
       $query = db_select('biblioteca', 't');
 
@@ -347,10 +378,21 @@ function mytable_display() {
 
       $rows = array();
             foreach ($result as $row) {
+
                 $editlink = "<a href='".drupal_get_path_alias(current_path()) . '/edit/'. $row->id."'>Edit</a>";
-                $maillink = "<a href='".drupal_get_path_alias(current_path()) . '/mail/'. $row->id."'>Mail</a>";
+               
+                //check if book is reserved and only then show mail and qr code link
+                if($row->date){
+                    $maillink = "<a href='".drupal_get_path_alias(current_path()) . '/mail/'. $row->id."'>Mail</a>";
+                    $qrlink = "<a href='".drupal_get_path_alias(current_path()) . '/qr/'. $row->id."'>Generate</a>";
+                }else{
+                    $maillink = "";
+                    $qrlink = "";
+                };
+
                 
-                $rows[] = array('data' => array($row->id, $row->title, $row->author, $row->isbn, $row->status, $editlink, $row->date, $row->userID, $maillink));
+                
+                $rows[] = array('data' => array($row->id, $row->title, $row->author, $row->isbn, $row->status, $editlink, $row->date, $row->userID, $maillink, $qrlink));
 
             }
       // If rows are not empty theme and display the rows.
@@ -364,32 +406,6 @@ function mytable_display() {
 
 
   }else{
-    $header = array(
-                array(
-                    'data' => t('ID'),
-                    'field' => 't.id',
-                ),
-                array(
-                    'data' => t('Title'),
-                    'field' => 't.title',
-                ),
-                array(
-                    'data' => t('Author'),
-                    'field' => 't.author',
-                ),
-                array(
-                    'data' => t('ISBN number'),
-                    'field' => 't.isbn',
-                ),
-                array(
-                    'data' => t('Status'),
-                    'field' => 't.status',
-                ),
-                array(
-                    'data' => t('Edit'),
-
-                ),
-            );
 
       $query = db_select('biblioteca', 't');
 
@@ -425,8 +441,6 @@ function mytable_display() {
  * Form for sending mail.
  */
 
-
-
 function biblioteca_mail_form($form, &$form_state, $variable) {
 
   $form['id'] = array(
@@ -439,17 +453,17 @@ function biblioteca_mail_form($form, &$form_state, $variable) {
   //getting the current status of the book
   $result = db_select('biblioteca','s')
     ->condition('id', $variable, '=')
-    ->fields('s', array('status','title','author', 'userID', 'date'))
+    ->fields('s', array('title','author', 'date','userID'))
     ->execute();
 
     foreach($result as $item) {
       $current_title = $item->title;
       $current_author = $item->author;
-      $current_uid = $item->userID;
+      $current_date = (string)$item->date;
+      $current_uid = $item->userID;    
     }
     
     $usr = user_load($current_uid);
-
 
   $form['mailto'] = array(
     '#type' => 'textfield',
@@ -468,7 +482,7 @@ function biblioteca_mail_form($form, &$form_state, $variable) {
   $form['body'] = array(
     '#type' => 'textarea',
     '#title' => t('Body'),
-    '#default_value' => 'This is a reminder to return the following book: '.$current_title.' from '.$current_author,
+    '#default_value' => 'This is a reminder to return the following book: '.$current_title.' from '.$current_author.' reserved on '.$current_date,
     '#required' => TRUE, 
   );
 
@@ -481,7 +495,7 @@ function biblioteca_mail_form($form, &$form_state, $variable) {
 }
 
 /**
- * Implements mybooks_edit_form_submit().
+ * Implements biblioteca_mail_form_submit().
  */
 
 function biblioteca_mail_form_submit($form, $form_state) {
@@ -497,5 +511,51 @@ function biblioteca_mail_form_submit($form, $form_state) {
     drupal_set_message('Error in sending email', $type = 'error');
   };
 
-//  mail($mailto, $subject, $body);
+  //mail($mailto, $subject, $body);
+}
+
+
+/**
+ * Implements qr_code_preprocess() function.
+ */
+
+
+global $base_url;
+
+function qr_code_preprocess(){
+
+  //getting the id from url with arg() function for the query by id.
+  $var = arg(2);  
+  //getting the current book data
+  $result = db_select('biblioteca','s')
+    ->condition('id', $var, '=')
+    ->fields('s', array('title','author', 'date', 'userID'))
+    ->execute();
+
+    foreach($result as $item) {
+      $current_title = $item->title;
+      $current_author = $item->author;
+      $current_date = (string)$item->date;
+      $current_uid = $item->userID;
+
+    }
+    
+    //loading the user by id to get the username.
+    $usr = user_load($current_uid);
+
+  $text = $current_title.' from '.$current_author.' was reserved by '.$usr->name.' on  '.$current_date;
+
+  //calling the qr code generate function.
+  qr_code_generate($text);
+
+}
+
+
+
+function qr_code_generate($text){
+
+  include("sites/all/libraries/phpqrcode/qrlib.php");
+    
+    // outputs image directly into browser, as PNG stream
+    QRcode::png($text);
 }
